@@ -83,6 +83,7 @@ pub mod theme;
 pub mod widgets;
 pub mod window_close;
 pub mod window_geometry;
+pub mod windows;
 pub mod wordart_menus;
 pub mod zotero;
 
@@ -496,6 +497,7 @@ fn migrate_units(v: &mut Value) {
 
 /// The application.
 pub struct WordApp {
+    windows: windows::Windows,
     pub session: Session,
     pub ui: UiState,
     pub services: Services,
@@ -651,6 +653,7 @@ impl WordApp {
             wordcraft_engine::set_system_locale(&tag);
         }
         WordApp {
+            windows: Default::default(),
             session,
             ui: UiState::default(),
             services,
@@ -844,11 +847,18 @@ impl WordApp {
     /// Close, Envelopes, Labels and Finish & Merge on a document with unsaved changes first ask
     /// Save / Don't Save / Cancel, and the command runs once that is answered (`ui.saveChanges`).
     pub fn run(&mut self, id: &str, params: Value) -> Result<Value, String> {
+        if self.another_window_has_dialog() && !id.starts_with("view.") && !id.starts_with("document.") {
+            return Err("Finish the dialog in the other document window first".into());
+        }
+        if id == "file.close" && self.window_ids().len() > 1 {
+            self.close_document_window(self.window_id())?;
+            return Ok(json!({"closedView": true}));
+        }
         // Comment text still being typed is written first, so a save or export has it and a
         // close, New or Open counts it as a change (#1348). A draft the document refuses is not
         // part of it: saving and exporting go on without it (the refusal stays on the status
         // line), and replacing the document asks Save / Don't Save / Cancel about it.
-        let refused = if flushes_comment_drafts(id, &params) { panes::flush_comment_drafts(self).err() } else { None };
+        let refused = if flushes_comment_drafts(id, &params) { self.flush_window_comments().err() } else { None };
         if id == "file.recover" && params.as_object().is_none_or(|p| p.is_empty()) {
             self.ui.backstage = true;
             self.ui.backstage_page = "recover".into();
@@ -932,7 +942,17 @@ impl WordApp {
         if let Some(r) = self.ui_command(id, &params) {
             return r;
         }
+        if id == "view.newWindow" {
+            return self.new_document_window();
+        }
+        if self.another_window_has_dialog() && !id.starts_with("view.") && !id.starts_with("document.") {
+            return Err("Finish the dialog in the other document window first".into());
+        }
         if id == "file.close" {
+            if self.window_ids().len() > 1 {
+                self.close_document_window(self.window_id())?;
+                return Ok(json!({"closedView": true}));
+            }
             return self.close_document(&params);
         }
         if id == "file.autosave" {
@@ -1336,6 +1356,7 @@ impl WordApp {
     }
 
     fn after_command(&mut self, id: &str) {
+        self.repaint_document_windows();
         options::sync(self);
         self.canvas.caret_visible_since = now_ms();
         if id == "view.outline" {
@@ -2004,16 +2025,20 @@ impl WordApp {
             self.ctx = Some(ctx.clone());
         }
         self.poll_printing(ctx);
-        self.drain_control(ctx);
-        zotero::poll(self, ctx);
-        read_aloud::poll(self, ctx);
+        if self.window_id() == 0 {
+            self.drain_control(ctx);
+            zotero::poll(self, ctx);
+            read_aloud::poll(self, ctx);
+        }
         self.clear_stale_change_picture();
         let _ = self.poll_file_dialog();
         self.drain_inbox();
         self.drain_pasted();
         self.watch_fonts(ctx);
         let document = self.session.document_id();
-        self.session.recovery_tick();
+        if self.window_id() == 0 {
+            self.session.recovery_tick();
+        }
         if self.session.document_id() != document {
             self.autosave_path = None;
             self.dialog = None;
@@ -2030,7 +2055,9 @@ impl WordApp {
         if let Some(wait) = self.session.recovery_wait() {
             ctx.request_repaint_after(wait);
         }
-        self.autosave_tick(now_ms());
+        if self.window_id() == 0 {
+            self.autosave_tick(now_ms());
+        }
         if self.autosaves() && self.session.dirty {
             ctx.request_repaint_after(std::time::Duration::from_millis(1000));
         }
@@ -2156,34 +2183,23 @@ impl WordApp {
     /// Read a Control-click as the right-click on macOS, then inject synthetic input events from
     /// the control channel (one pointer event per frame).
     pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
-        if cfg!(target_os = "macos") {
-            control_click_as_secondary(&mut raw.events, &mut self.control_click);
+        if prepare_view_input(raw, &mut self.synthetic, &mut self.control_click) {
+            self.sync_synthetic_focus();
         }
-        if self.synthetic.is_empty() {
-            return;
+    }
+
+    fn sync_synthetic_focus(&mut self) {
+        if let (Some(ctx), Some((id, _))) = (&self.ctx, self.canvas.widget_id) {
+            // Canvas keys run before painting updates last frame's native focus flag.
+            self.canvas.focused = ctx.memory(|m| m.has_focus(id));
         }
-        let n = match self.synthetic.first() {
-            Some(egui::Event::PointerMoved(_) | egui::Event::PointerButton { .. }) => 1,
-            _ => self.synthetic.iter().position(|e| matches!(e, egui::Event::Key { pressed: false, .. })).map_or(self.synthetic.len(), |i| i + 1),
-        };
-        if let Some(egui::Event::PointerMoved(p) | egui::Event::PointerButton { pos: p, .. }) = self.synthetic.first() {
-            raw.events.push(egui::Event::PointerMoved(*p));
-        }
-        let n = n.min(self.synthetic.len());
-        if self.synthetic.iter().take(n).any(|e| matches!(e, egui::Event::Key { .. } | egui::Event::Text(_))) {
-            // Control input belongs to this window's remembered widget even while another app
-            // is active. Give only this input frame egui focus, without requesting OS activation.
-            raw.focused = true;
-            if let (Some(ctx), Some((id, _))) = (&self.ctx, self.canvas.widget_id) {
-                // Canvas keys run before painting updates last frame's native focus flag.
-                self.canvas.focused = ctx.memory(|m| m.has_focus(id));
-            }
-        }
-        raw.events.extend(self.synthetic.drain(..n));
     }
 
     /// Lay out the window.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
+        if self.another_window_has_dialog() {
+            ui.disable();
+        }
         let t0 = now_ms();
         let ctx = ui.ctx().clone();
         i18n::set_current(i18n::Lang::from_pref(&self.ui.language));
@@ -2245,7 +2261,8 @@ impl WordApp {
             ctx.open_url(egui::OpenUrl::new_tab(url));
         }
         let title = if self.has_document() {
-            format!("{}{} - WordCraft", self.title_stem(), if self.session.dirty { " •" } else { "" })
+            let suffix = if self.window_ids().len() > 1 { format!(":{}", self.window_id().saturating_add(1)) } else { String::new() };
+            format!("{}{}{} - WordCraft", self.title_stem(), suffix, if self.session.dirty { " •" } else { "" })
         } else {
             "WordCraft".to_string()
         };
@@ -2376,16 +2393,20 @@ impl WordApp {
         let Some(rx) = self.control_rx.take() else { return };
         while let Ok(req) = rx.try_recv() {
             let reply = req.reply.clone();
-            match control::handle(self, ctx, &req) {
+            let window = req.params.get("window").and_then(Value::as_u64).unwrap_or(0);
+            let result = self.with_window(window, |app| match control::handle(app, ctx, &req) {
                 control::Outcome::Done(v) => {
                     let _ = reply.send(v);
                 }
                 control::Outcome::Screenshot { path } => {
-                    self.shot_token += 1;
-                    let token = self.shot_token;
-                    self.queued_shots.push((token, now_ms() + 120.0, 0));
-                    self.pending_shots.push((token, path, reply, now_ms() + 8000.0));
+                    app.shot_token = app.shot_token.wrapping_add(1);
+                    let token = app.shot_token;
+                    app.queued_shots.push((token, now_ms() + 120.0, 0));
+                    app.pending_shots.push((token, path, reply.clone(), now_ms() + 8000.0));
                 }
+            });
+            if let Err(error) = result {
+                let _ = reply.send(json!({"ok": false, "error": error}));
             }
         }
         self.control_rx = Some(rx);
@@ -2439,6 +2460,36 @@ impl WordApp {
             false
         });
     }
+}
+
+/// Prepare the same input for the root hook and egui's immediate child viewports.
+fn prepare_view_input(raw: &mut egui::RawInput, synthetic: &mut Vec<egui::Event>, control_click: &mut bool) -> bool {
+    if cfg!(target_os = "macos") {
+        control_click_as_secondary(&mut raw.events, control_click);
+    }
+    if synthetic.is_empty() {
+        return false;
+    }
+    let n = match synthetic.first() {
+        Some(egui::Event::PointerMoved(_) | egui::Event::PointerButton { .. }) => 1,
+        _ => synthetic.iter().position(|e| matches!(e, egui::Event::Key { pressed: false, .. })).map_or(synthetic.len(), |i| i + 1),
+    };
+    if let Some(egui::Event::PointerMoved(p) | egui::Event::PointerButton { pos: p, .. }) = synthetic.first() {
+        raw.events.push(egui::Event::PointerMoved(*p));
+    }
+    let n = n.min(synthetic.len());
+    let focused = synthetic.iter().take(n).any(|e| matches!(e, egui::Event::Key { .. } | egui::Event::Text(_)));
+    if focused {
+        // Give only this frame egui focus, without requesting OS activation.
+        raw.focused = true;
+    }
+    if synthetic.iter().take(n).any(|e| matches!(e, egui::Event::Text(_))) {
+        // ui.text supplies literal text. Physical modifiers from another app/window must
+        // not turn it into a shortcut (and silently discard it) on a shared desktop.
+        raw.events.push(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    }
+    raw.events.extend(synthetic.drain(..n));
+    focused
 }
 
 /// Why AutoSave can't cover the document ([`WordApp::autosave_block`]); the switch is greyed out

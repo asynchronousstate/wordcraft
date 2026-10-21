@@ -48,6 +48,31 @@ any other host it sends no key, says so, and the app refuses its requests: to dr
 another machine, forward its port to `127.0.0.1` (for example `ssh -L 7981:127.0.0.1:7981 host`)
 and set `WORDCRAFT_CONTROL_KEY` to that app's key.
 
+## Shared document views (M8.1)
+
+The control port and key belong to the shared application session and remain valid while any
+view remains open. `ui.windows` lists visible numeric window IDs and the shared document ID.
+The original view is `0`. `engine.execute` with command `view.newWindow` returns the new ID.
+Supply `params.window` beside `command` (not inside its command parameters) to address another
+view. Without it, requests retain their original-view behavior. `ui.inspect` also reports
+`windowId`, `selection` and `inputModifiers`. Synthetic input and document-page rendering can
+target a view with the same field. `ui.text` supplies literal text independently of physical
+shortcut modifiers. `ui.screenshot` currently works only for the original viewport: eframe's
+immediate secondary viewports do not support screenshot readback, so they return an explicit
+error. Use `ui.render` for a document page or a native window-capture tool for those views.
+
+```json
+{"method":"engine.execute","params":{"command":"view.newWindow","params":{}}}
+{"method":"engine.execute","params":{"window":1,"command":"text.insert","params":{"text":"Hello"}}}
+{"method":"ui.render","params":{"window":1,"page":1,"path":"/tmp/second-view-page.png"}}
+```
+
+All requests still require the existing authentication key. Unknown, negative or noninteger
+window IDs return errors. Closing one of several views with `file.close` leaves the shared
+document open; the final view retains the existing explicit-save/force rules.
+
+Last updated: 2026-10-20 (M8.1).
+
 ## Methods
 
 | Method | Params | Result |

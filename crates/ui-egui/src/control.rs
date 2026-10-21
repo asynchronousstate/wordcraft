@@ -45,9 +45,11 @@ fn err(e: impl std::fmt::Display) -> Outcome {
 }
 
 pub fn inspect(app: &mut WordApp, ctx: &egui::Context) -> Value {
-    let r = ctx.content_rect();
+    let r = ctx.input_for(crate::windows::viewport(app.window_id()), |i| i.content_rect());
     let caret = crate::canvas::caret_screen(app).map(|(p, h)| json!({"x": p.x, "y": p.y, "h": h}));
     json!({
+        "windowId": app.window_id(),
+        "selection": app.session.sel,
         "ui": app.prefs(),
         "view": app.session.view,
         "dialog": app.dialog.as_ref().map(|d| serde_json::to_value(d).unwrap_or_default()),
@@ -59,6 +61,10 @@ pub fn inspect(app: &mut WordApp, ctx: &egui::Context) -> Value {
         "balloons": app.canvas.balloon_rects.iter().map(|(id, r)| json!({"id": id, "rect": [r.left(), r.top(), r.width(), r.height()]})).collect::<Vec<_>>(),
         "balloon": app.canvas.balloon,
         "focused": app.canvas.focused,
+        "inputModifiers": ctx.input_for(crate::windows::viewport(app.window_id()), |i| json!({
+            "alt": i.modifiers.alt, "ctrl": i.modifiers.ctrl, "shift": i.modifiers.shift,
+            "command": i.modifiers.command, "macCmd": i.modifiers.mac_cmd,
+        })),
         "title": app.title_stem(),
         "dirty": app.session.dirty,
         "perf": {"frameMs": app.frame_ms, "renderMs": app.canvas.render_ms, "layoutMs": app.session.layout().ms},
@@ -112,7 +118,7 @@ pub(crate) fn close_refused(app: &WordApp, id: &str, params: &Value) -> Option<&
     if force {
         return None;
     }
-    if id == "file.close" && app.session.dirty {
+    if id == "file.close" && app.session.dirty && app.window_ids().len() <= 1 {
         return Some("the document has unsaved changes: save it first, or pass {\"force\": true} to discard them and close");
     }
     // Comment text still being typed is unsaved work too (#1348): replacing the document would drop it.
@@ -124,10 +130,20 @@ pub(crate) fn close_refused(app: &WordApp, id: &str, params: &Value) -> Option<&
 const NO_DOCUMENT: &str = "no document is open; create one (file.new) or open one (file.open) first";
 
 pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> Outcome {
+    if let Some(window) = req.params.get("window") {
+        let Some(id) = window.as_u64() else { return err("window must be a nonnegative integer") };
+        if id != app.window_id() {
+            return match app.with_window(id, |app| handle(app, ctx, req)) {
+                Ok(outcome) => outcome,
+                Err(e) => err(&e),
+            };
+        }
+    }
     let p = &req.params;
     let s = |k: &str| p.get(k).and_then(Value::as_str);
     let f = |k: &str| p.get(k).and_then(Value::as_f64).map(|v| v as f32);
     match req.method.as_str() {
+        "ui.windows" => ok(json!({"windows": app.window_ids(), "active": app.window_id(), "document": app.session.document_id()})),
         "engine.execute" | "command" => {
             let Some(id) = s("command").or(s("id")) else { return err("missing `command`") };
             let params = p.get("params").cloned().filter(|v| !v.is_null()).unwrap_or(json!({}));
@@ -141,8 +157,13 @@ pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> O
         }
         "engine.commands" => {
             let reg = app.session.registry.clone();
-            let mut commands: Vec<Value> = reg.all().iter()
-                .map(|c| json!({"id": c.id, "label": c.label, "location": c.location, "shortcut": c.shortcut, "params": c.params, "enabled": (c.enabled)(&app.session).is_none()}))
+            let mut commands: Vec<Value> = reg
+                .all()
+                .iter()
+                .map(|c| {
+                    json!({"id": c.id, "label": c.label, "location": c.location, "shortcut": c.shortcut, "params": c.params,
+                    "enabled": (c.enabled)(&app.session).is_none() && (c.id != "view.newWindow" || app.windows.native)})
+                })
                 .collect();
             commands.extend(crate::printing::commands(app));
             let search = s("search").unwrap_or("").to_ascii_lowercase();
@@ -252,6 +273,9 @@ pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> O
             app.synthetic.push(egui::Event::Text(t.to_string()));
             ok(json!({"queued": true}))
         }
+        "ui.screenshot" if app.window_id() != 0 => {
+            err("eframe cannot capture immediate secondary viewports; use ui.render for a document page or native window capture")
+        }
         "ui.screenshot" => Outcome::Screenshot { path: s("path").map(str::to_string) },
         "ui.render" => {
             let page = p.get("page").and_then(Value::as_u64).unwrap_or(1);
@@ -271,11 +295,11 @@ pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> O
         }
         "ui.resize" => {
             let (Some(w), Some(h)) = (f("width"), f("height")) else { return err("missing width/height") };
-            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(w, h)));
+            ctx.send_viewport_cmd_to(crate::windows::viewport(app.window_id()), egui::ViewportCommand::InnerSize(egui::vec2(w, h)));
             ok(json!({}))
         }
         "ui.focus" => {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            ctx.send_viewport_cmd_to(crate::windows::viewport(app.window_id()), egui::ViewportCommand::Focus);
             app.canvas.want_focus = true;
             ok(json!({}))
         }

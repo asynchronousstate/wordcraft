@@ -12,6 +12,25 @@ fn s() -> Session {
     Session::new(wordcraft_doc::Document::new())
 }
 
+// Shared-window contract; not yet compared with Word's native windows.
+#[test]
+fn shared_windows_render_queries_keep_typing_but_input_switch_starts_a_new_group() {
+    let mut s = s();
+    let mut other = s.new_view(1);
+    typ(&mut s, "ab");
+    s.exchange_view(&mut other);
+    run(&mut s, "format.state", json!({}));
+    run(&mut s, "file.info", json!({}));
+    s.exchange_view(&mut other);
+    typ(&mut s, "cd");
+    assert_eq!(s.undo_depth(), 1);
+    s.exchange_view(&mut other);
+    typ(&mut s, "e");
+    assert_eq!(s.undo_depth(), 2);
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(s.doc.plain_text(StoryRef::Body).trim(), "abcd");
+}
+
 fn run(s: &mut Session, id: &str, v: serde_json::Value) {
     s.run(id, &v).unwrap_or_else(|e| panic!("{id}: {e}"));
 }

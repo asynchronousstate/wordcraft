@@ -1,6 +1,6 @@
 # Where WordCraft falls short of Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-19 · **Change:** trivial (text typed into a content control takes the control's formatting; localized placeholder styles recognised; previously trivial: forms protection keeps its content controls: no inserting, Properties or Remove Content Control; previously trivial: clearing a no-match font query keeps the recent heading visible, #2068; previously trivial: line breaking: a slash opening a word travels whole to the next line, #2963; previously trivial: recipient list search and merged-only view, #1576; previously trivial: #2 impact restated: only ink rendering and OLE editing remain; previously trivial: #2 narrowed: native ink nested in groups and drawing canvases kept on save; previously trivial: opening a DOCX no longer copies its pictures; previously trivial: RTF export writes sections (gap 19); previously trivial: ODT export writes sections (gap 19); previously trivial: automatic Asian/Latin and Asian/number spacing laid out, #2358; previously trivial: hint-reliant CJK outlines; previously trivial: numbered headings, #1793; previously trivial: legacy outline, shadow, emboss and imprint text effects drawn, #2534; previously trivial: #8 narrowed: Indonesian proofing from the installed Hunspell dictionary, #498; previously trivial: glossary/building blocks closed; previously trivial: Split Cells and Convert Text to Table follow the Word check, #2592; previously trivial: Language dialog keeps inherited proofing language and no-proof choices (#2717); previously trivial: #29: a copied equation also goes in the MathML clipboard formats, #1297; previously trivial: #24: the Spike, Ctrl+F3 and Ctrl+Shift+F3; previously trivial: VML freeforms read and kept on save; previously trivial: consistent preferred cell widths; previously trivial: multi-paragraph field instructions no longer add blank lines; previously trivial: page-break-only list paragraphs hide their labels; previously trivial: floating-table overlap ignores empty line-break lines; previously trivial: copies keep their formatting on the clipboard as HTML, #1523; previously trivial: sample-text formulas on Enter, #1067; previously trivial: #29: copied equations as MathML, OMML open as #1297, #816; previously trivial: the Font list no longer keeps every previewed font in memory, #848; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously trivial: formatting revisions landed, #41; previously trivial: Draw Table and Eraser landed, #303; previously minor: beta distance restated: ~15 points, ~150–230 h; previously: first version; every known shortfall from the 2026-10-10 re-measure, ranked) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-20 · **Last updated:** 2026-10-20 · **Change:** minor (M8.1: shared-document New Window; Windows smoke test and full CI passed; macOS/Linux validation pending) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 > **Printing update:** 2026-10-12 · direct desktop printing through craft-print; details below.
 
@@ -30,6 +30,10 @@ Exact line spacing keeps the run font baseline around tall equations; automatic 
 Legacy Word imports (#2445): interactive Save for `.doc`/`.dot` uses the existing DOCX Save As dialog. Cancel and write failures retain the draft and original path; Save before Close continues only after a successful supported-format save. This narrows save reliability under gap #3; binary `.doc` writing remains unsupported. Late Save As answers are rejected before writing if automation has replaced the document.
 
 Active footnote and endnote text stays readable while editing (#2545). This fixes a display-context defect; the broader fidelity, accessibility and readiness gates below are unchanged.
+
+M8.1 implements desktop New Window with a shared live session. The remaining window work is
+arrangement, switching, synchronized scrolling, richer selection mapping, and platform/assistive
+technology validation. See [New Window behavior and limits](ui-parity.md#new-window-m81).
 
 ## Ranked
 
@@ -103,6 +107,8 @@ The Language dialog reads effective character formatting, including document def
 Footer page-table height and body wrapping are corrected. Other pagination gaps remain open.
 
 ## Revision history
+
+- 2026-10-20: M8.1: shared-document New Window; Windows smoke test and full CI passed; macOS/Linux validation pending.
 
 | Date | Change | Summary |
 |---|---|---|

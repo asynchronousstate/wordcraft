@@ -173,6 +173,9 @@ fn keytip_badge(ui: &Ui, rect: Rect, id: &str, name: &str) {
 
 /// Whether a command exists and is enabled.
 pub fn enabled(app: &WordApp, id: &str) -> bool {
+    if id == "view.newWindow" && !app.windows.native {
+        return false;
+    }
     // No document open (#1129): only what opens one, Help and the settings.
     if !app.has_document() && !crate::works_without_document(id) {
         return false;

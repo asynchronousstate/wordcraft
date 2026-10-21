@@ -1,6 +1,6 @@
 # WordCraft architecture
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** minor (`proof` is per language: English and Polish; previously major: first committed version; `plan/architecture.md` is local-only) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-20 · **Last updated:** 2026-10-20 · **Change:** minor (M8.1: shared-document New Window; Windows smoke test and full CI passed; macOS/Linux validation pending) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft is built today (origin/main `40c5d51`). The longer design notes in
 `plan/architecture.md` are gitignored and local to the original author's machine; this file is the
@@ -48,6 +48,17 @@ winit or rfd.
    an egui/wgpu canvas; PDF export walks the same display list through `pdf`.
 5. **Save:** `engine::io` picks a writer by extension.
 
+## Shared document windows
+
+M8.1 uses context exchange: `Session::new_view` / `exchange_view` park editing fields while
+retaining one authoritative document, undo history, save path and recovery owner. The list of
+engine fields is centralized in `engine/src/session/views.rs`; frontend fields are centralized
+in `ui-egui/src/windows.rs`. A scope guard restores the previous context on return or unwind.
+The existing command API and headless default view are retained. egui immediate viewports
+borrow the same application sequentially, with distinct canvas IDs and per-view layout outputs.
+Document-wide background polling runs in the root context. Native New Window is opt-in from
+the desktop host; window lifecycle stays outside the engine.
+
 ## Testing and gates
 
 - 821 `#[test]` functions and 10 property-test blocks: model, layout, DOCX round-trip and hostile
@@ -61,6 +72,8 @@ winit or rfd.
   release builds on pushes to `release`.
 
 ## Revision history
+
+- 2026-10-20: M8.1: shared-document New Window; Windows smoke test and full CI passed; macOS/Linux validation pending.
 
 | Date | Change | Summary |
 |---|---|---|

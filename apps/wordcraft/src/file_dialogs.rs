@@ -27,7 +27,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use wordcraft_ui_egui::{FileDialogAnswer, FileDialogRequest};
 
 /// A dialog the app asked for, with the channel its answer goes back through.
-type Request = (FileDialogRequest, Sender<FileDialogAnswer>);
+type Request = (FileDialogRequest, Sender<FileDialogAnswer>, egui::ViewportId);
 
 /// The `Services::file_dialog` hook.
 pub type Hook = Box<dyn Fn(FileDialogRequest) -> Receiver<FileDialogAnswer>>;
@@ -45,10 +45,11 @@ pub struct Launcher {
 /// launcher that shows what it queues.
 pub fn hook(ctx: &egui::Context) -> (Hook, Launcher) {
     let (queue_tx, queue) = channel::<Request>();
+    let context = ctx.clone();
     let hook: Hook = Box::new(move |req| {
         let (answer, rx) = channel();
         // If the launcher is gone, the dropped answer reads as "cancelled" in the app.
-        let _ = queue_tx.send((req, answer));
+        let _ = queue_tx.send((req, answer, context.viewport_id()));
         rx
     });
     (hook, Launcher { queue, ctx: ctx.clone() })
@@ -58,9 +59,13 @@ impl Launcher {
     /// Show the queued dialogs with the window as their parent, so the portal (or the system)
     /// keeps them on top of it. Call after every pass that may ask for one.
     pub fn show(&self, parent: &eframe::Frame) {
-        while let Ok((req, answer)) = self.queue.try_recv() {
+        while let Ok((req, answer, viewport)) = self.queue.try_recv() {
             // Built here, on the UI thread: macOS shows the panel as a sheet on the window now.
-            let picking = picker(rfd::AsyncFileDialog::new().set_parent(parent), &req);
+            // eframe's Frame exposes the root handle only. A secondary view must not attach
+            // its picker to that window, which can already be hidden after closing its view.
+            let dialog = rfd::AsyncFileDialog::new();
+            let dialog = if viewport == egui::ViewportId::ROOT { dialog.set_parent(parent) } else { dialog };
+            let picking = picker(dialog, &req);
             #[cfg(all(unix, not(target_os = "macos")))]
             let unparented = picker(rfd::AsyncFileDialog::new(), &req);
             let ctx = self.ctx.clone();

@@ -1,6 +1,6 @@
 # WordCraft roadmap: milestones and what's next
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-18 · **Change:** trivial (M6: Manage Sources imports Word's `Sources.xml`, #2640; previously minor: Czech proofing review fixes; previously minor: Portuguese proofing; previously minor: Polish interface and Polish proofing; previously trivial: M7: formatting revisions landed, #41; previously trivial: M5: Draw Table and Eraser landed, #303; previously minor: beta distance restated: ~15 points, ~150–230 h; previously: alpha gate checked: six core workflows pass; previously major: milestones moved here from ROADMAP.md; Current focus set from the re-measured gaps) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-20 · **Last updated:** 2026-10-20 · **Change:** minor (M8.1: shared-document New Window; Windows smoke test and full CI passed; macOS/Linux validation pending) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 Forward-looking plan. The summary is [`ROADMAP.md`](../ROADMAP.md); the ranked work list is
 [`gaps.md`](gaps.md); the numbers are in [`target-app-parity.md`](target-app-parity.md). Hours are
@@ -43,6 +43,10 @@ every day, checked end to end on the main platform (macOS desktop), including sa
 **Result: passes.** Every core workflow completes on macOS and the work saves and reopens; the
 partial rows are fidelity gaps (beta work), not broken workflows. WordCraft stays **alpha**.
 
+M8.1: shared-document New Window is implemented through per-window context exchange.
+Validation and initial limits are tracked in [UI parity](ui-parity.md#new-window-m81).
+The broader M8 window-management work remains open.
+
 ## Milestones
 
 | # | Milestone | State | Remaining |
@@ -71,6 +75,8 @@ Charts and SmartArt editing, the Draw tab, `.doc` writing, PDF Reflow, the remai
 languages, screen-reader access, ecosystem decisions (VBA, add-ins, cloud), an in-app assistant.
 
 ## Revision history
+
+- 2026-10-20: M8.1: shared-document New Window; Windows smoke test and full CI passed; macOS/Linux validation pending.
 
 | Date | Change | Summary |
 |---|---|---|

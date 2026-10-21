@@ -70,13 +70,22 @@ fn emoji_page(opts: &RenderOptions) -> Option<(Rendered, Vec<(u32, u32, u32, u32
 /// [`emoji_page`] with the text formatted `cp`.
 #[cfg(not(target_arch = "wasm32"))]
 fn emoji_page_with(opts: &RenderOptions, cp: wordcraft_doc::CharProps) -> Option<(Rendered, Vec<(u32, u32, u32, u32)>)> {
-    let has_colour_font = FontDb::global().fallback_for('🧠', u32::MAX).is_some_and(|f| COLOR_EMOJI.contains(&f.family.as_str()));
-    if !has_colour_font {
+    let Some(face) = FontDb::global().fallback_for('🧠', u32::MAX).filter(|f| COLOR_EMOJI.contains(&f.family.as_str())) else {
         eprintln!("skipped: no colour emoji font installed");
         return None;
-    }
+    };
+    const TEXT: &str = "Emoji test: 🧠 brain, ✅ check.";
     let mut d = Document::from_text("x");
-    d.body = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text("Emoji test: 🧠 brain, ✅ check.", cp))];
+    d.body = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text(TEXT, cp))];
+    // Test colour rendering independently of system fallback order: a symbol font may also
+    // cover the check mark (for example on Windows). Request the colour face for both emoji.
+    for (off, c) in TEXT.char_indices().filter(|(_, c)| matches!(c, '🧠' | '✅')) {
+        assert!(face.covers(c), "{} must cover {c}", face.family);
+        d.format_range(&wordcraft_doc::Pos::body(0, off), &wordcraft_doc::Pos::body(0, off + c.len_utf8()), &|p| {
+            p.font = Some(face.family.clone());
+        })
+        .unwrap();
+    }
     let l = layout(&d, &mut LayoutCache::new(), &LayoutOptions::default());
     let page = &l.pages[0];
     let scale = 2.0;

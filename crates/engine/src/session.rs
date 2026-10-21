@@ -25,6 +25,9 @@ use wordcraft_layout::{DocLayout, LayoutCache, LayoutOptions, NumeralMode, ViewM
 
 use crate::{CmdError, Registry};
 
+mod views;
+pub use views::EditingView;
+
 /// A selection: anchor (where it started) and focus (where the caret is).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct Selection {
@@ -351,6 +354,8 @@ impl EditSnapshot {
 
 /// An editing session.
 pub struct Session {
+    active_view: u64,
+    input_view: u64,
     pub doc: Document,
     pub sel: Selection,
     pub view: ViewState,
@@ -629,6 +634,8 @@ impl Session {
         let start = doc.start_of(StoryRef::Body);
         let bib_style = doc_bib_style(&doc);
         Session {
+            active_view: 0,
+            input_view: 0,
             doc,
             sel: Selection::caret(start),
             view: ViewState::default(),
@@ -1145,6 +1152,8 @@ impl Session {
     /// whether a snapshot must cover it.
     pub fn edit_snapshot(&self) -> EditSnapshot {
         let Session {
+            active_view: _,
+            input_view: _,
             doc,
             sel,
             view: _,
@@ -1283,6 +1292,14 @@ impl Session {
         let join = std::mem::take(&mut self.join_next);
         let reg = self.registry.clone();
         let Some(spec) = reg.get(id) else { return Err(CmdError::Unknown(id.to_string())) };
+        // Rendering queries in another view do not end a typing group. Editing there does.
+        let input = spec.mutates || id.starts_with("caret.") || id.starts_with("select.") || matches!(id, "edit.undo" | "edit.redo" | "edit.undoTo");
+        let changed_view = input && self.input_view != self.active_view;
+        let join = join && !changed_view;
+        if changed_view {
+            self.close_typing();
+            self.input_view = self.active_view;
+        }
         if let Some(why) = (spec.enabled)(self) {
             return Err(CmdError::Disabled(format!("{id}: {why}")));
         }

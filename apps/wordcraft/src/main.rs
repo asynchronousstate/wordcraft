@@ -67,7 +67,18 @@ impl eframe::App for App {
         }
         // The window's close button: with unsaved changes, ask first (`WordApp::close_requested`).
         let closing = ctx.input(|i| i.viewport().close_requested());
-        if closing && !self.0.close_requested() {
+        let allow_close = if closing {
+            match self.0.close_document_window(0) {
+                Ok(allow) => allow,
+                Err(e) => {
+                    self.0.status(e);
+                    false
+                }
+            }
+        } else {
+            false
+        };
+        if closing && !allow_close {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
         } else if (closing || self.0.quit_requested) && !self.0.printing.busy() {
             // On macOS, letting eframe drop the window inside `-[NSApplication run]` aborts in
@@ -86,10 +97,13 @@ impl eframe::App for App {
         }
     }
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
-        self.0.raw_input_hook(raw);
+        self.0.window_raw_input(raw);
     }
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
-        self.0.ui(ui);
+        if !self.0.root_window_hidden() {
+            self.0.ui(ui);
+        }
+        self.0.document_windows_ui(ui.ctx());
         self.3.show(frame);
     }
     fn on_exit(&mut self) {
@@ -425,6 +439,7 @@ fn main() -> eframe::Result {
             let mut session = Session::new(doc);
             session.system_region = region;
             let mut app = WordApp::new(session, services(file_dialog, &cc.egui_ctx));
+            app.enable_document_windows();
             load_prefs(&mut app);
             load_user_dictionary(&mut app);
             // A region chosen in File › Options replaces the system's for the first blank

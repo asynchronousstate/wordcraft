@@ -1183,7 +1183,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         // chrome changes, and a new id dropped the keyboard focus, so the arrows, Page Up/Down
         // and Escape did nothing in Read Mode until the reader clicked a page (#1772).
         ui.advance_cursor_after_rect(content);
-        let resp = ui.interact(content, egui::Id::new("wordcraft_canvas"), Sense::click_and_drag());
+        let canvas_id = if app.window_id() == 0 { egui::Id::new("wordcraft_canvas") } else { egui::Id::new(("wordcraft_canvas", app.window_id())) };
+        let resp = ui.interact(content, canvas_id, Sense::click_and_drag());
         if let Some(tr) = scroll_target {
             ui.scroll_to_rect(Rect::from_min_size(ui.min_rect().min + tr.min.to_vec2(), tr.size()), None);
         }

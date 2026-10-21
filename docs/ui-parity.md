@@ -1,6 +1,6 @@
 # UI parity with Microsoft Word
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-18 · **Change:** trivial (long navigation headings wrap onto further lines within the pane, #3015; previously trivial: clearing a no-match font query keeps the recent heading visible, #2068; previously trivial: dragging the vertical scrollbar names the page at the top of the window, #2551; previously trivial: Add Font imports every selected font file, #1789); previously trivial (File › Close keeps the window, #1712; previously trivial: the Spike: Ctrl+F3 and Ctrl+Shift+F3; previously trivial: Ctrl+wheel zoom no longer scrolls the document, #1743; previously trivial: a mouse drag on a table leaves the view where it is, #1738; previously trivial: numbered headings, #1793; previously trivial: Navigation Find exposes Results, #2096; previously trivial: the tab strip never draws tabs over Comments / Editing / Share, #2026; previously trivial: Columns on selected text, #2024; previously trivial: Different First Page headers reachable from page 1, #2826; previously trivial: a copied equation also goes in the clipboard's MathML formats, #1297; previously trivial: Read Mode keeps the keyboard, shows whole columns and keeps text clear of the page-turn bar, #1772); previously trivial: font list entries of tall-ascent fonts sit in their row, not cut off, #2570); previously trivial: Split Cells and Convert Text to Table dialogs follow Word's merged-cell limits and Initial column width, #2592; previously trivial: a new source's Tag is made like Word's, three letters of the author and two digits of the year with a number added when taken, and an edit keeps the Tag, #2094; previously trivial: Web Layout text fills the window width, #1876; previously trivial: Language dialog keeps inherited proofing language and no-proof choices (#2717)); previously trivial: comment balloons readable in the dark theme, #2045; previously trivial: Recently Used Fonts section at the top of the font list, #2068; previously trivial: web preferences kept between visits, #2132; previously trivial: dialog close control: a Windows-style box at the title bar's right end, the whole box clickable, red on hover, #1885); previously trivial (Modify Table Style formats every table style part, #714); previously trivial: a click on the ribbon chrome hands the keyboard to the page in the same frame, #1093 follow-up; previously trivial: Page Setup vertical alignment, #1320; previously trivial: the app opens on the Home tab every launch, as in Word; previously trivial: no document behind the Start screen, #1129; previously trivial: equation pictures share a few textures, #1002; previously trivial: selection bar in the left margin, #856; previously trivial: table column and row markers on the rulers, #700; previously trivial: table borders and the resize handle drag on the page, #217; previously major: first version; ribbon, dialogs, shortcuts and on-canvas interaction measured from `crates/ui-egui` and the command registry) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-20 · **Last updated:** 2026-10-20 · **Change:** minor (M8.1: shared-document New Window; Windows smoke test and full CI passed; macOS/Linux validation pending) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 How WordCraft looks and feels next to Word: ribbon, dialogs, panes, keyboard, mouse and touch.
 Typing behaviour has its own checklist ([`typing-parity.md`](typing-parity.md)). All assets are our
@@ -70,7 +70,51 @@ Find selects the Results tab, including when it prefills selected text. Editing 
 
 Footnote and endnote editing keeps body and note text at normal opacity, on light and dark pages. Headers and footers still dim outside their editing context (#2545).
 
+## New Window (M8.1)
+
+Desktop View > New Window opens another editable native view of the same in-memory document.
+The session owns one document, undo/redo history, path, dirty state and recovery worker. Each
+window retains its selection, pending character formatting, zoom, view mode, find state,
+canvas and dialogs. Save As changes the shared path. New/Open replace the shared document
+after the existing save prompt; independent documents and tabs are separate work.
+
+Closing a view while another remains does not discard the document or prompt to save it.
+The final native window uses the existing save/cancel flow. If the original window closes
+first, its native root stays hidden to host the remaining views. There are at most eight views.
+An open dialog blocks editing in other views until it is finished; child native file pickers
+are unparented because eframe exposes only the root window handle.
+
+Inactive selections follow unchanged paragraph identities and text replacements. Complex
+multi-part/table selections and equation-edit modes end when another view changes the
+document. A replacement spanning an inactive caret moves it to the end of the replacement;
+mapping text over 4 MiB falls back to a clamped position. This is a conservative first version,
+not a claim of complete Word selection parity.
+
+The web/headless frontend reports that New Window requires the native desktop application.
+Side by Side, synchronized scrolling, Arrange All and Switch Windows remain separate gaps.
+The control channel can inspect, edit and render pages in each view. Native viewport screenshots
+through `ui.screenshot` work only in the original window because of an eframe limitation.
+Native platform and screen-reader checks are recorded with the implementation's validation;
+no Microsoft Word observation was used to claim exact behavioral parity.
+
+Validation on Windows (2026-10-20): a release build ran two native views with independent
+selection and zoom, text input through the secondary viewport, shared Save As and undo/redo.
+After closing the original, text input and saving still worked; another view could be created,
+and application quit closed the remaining views. The resulting DOCX was inspected for both
+windows' edits. Native window capture was used to inspect the secondary UI. Full
+`cargo +1.95.0 xtask ci` passed all six gates: formatting, workspace Clippy with `-D warnings`
+without extra warning suppressions, 3,475 passing tests (three existing ignored tests), attribution for all
+55 assets, layering for all 20 crates, and all 16 WASM checks. This includes 786 engine unit
+tests and 726 UI unit tests, including the shared-window and hostile-parameter regressions.
+Nine pre-existing Clippy findings were fixed with equivalent conditions and match guards.
+The colour-emoji rendering fixture now explicitly requests the installed colour face for
+both emoji, retaining its glyph-count and pixel assertions without depending on system
+symbol-font fallback order. macOS/Linux native operation and screen-reader behavior have
+not been validated for this change.
+
 ## Revision history
+
+- 2026-10-20: M8.1: shared-document New Window; Windows smoke test and full CI passed; macOS/Linux validation pending.
 
 | Date | Change | Summary |
 |---|---|---|
